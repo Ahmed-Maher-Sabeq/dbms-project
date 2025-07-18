@@ -1,0 +1,87 @@
+#!/bin/bash
+
+DB_PATH="./DBMS"
+
+mkdir -p "$DB_PATH"
+
+main_menu() {
+    echo "------------------Main Menu-------------------"
+    echo "1. create database"
+    echo "2. list databases"
+    echo "3. use database"
+    echo "4. drop database"
+    echo "5. exit"
+    echo "-----------------------------------------------"
+    read -p "Choose an option: " choice
+
+    case $choice in
+        1) create_database ;;
+        2) list_databases ;;
+        3) use_database ;;
+        4) drop_database ;;
+        5) exit ;;
+        *) echo "Invalid option" ; main_menu ;;
+    esac
+}
+
+create_database() {
+    read -p "enter database name: " dbname
+    if [ -d "$DB_PATH/$dbname" ]; then
+        echo "database already exists"
+    else
+        mkdir "$DB_PATH/$dbname"
+        echo "database '$dbname' created"
+    fi
+    main_menu
+}
+
+list_databases() {
+    echo "available databases:"
+    ls "$DB_PATH"
+    main_menu
+}
+
+drop_database() {
+    read -p "dnter database name to delete: " dbname
+    if [ -d "$DB_PATH/$dbname" ]; then
+        rm -r "$DB_PATH/$dbname"
+        echo "database '$dbname' deleted"
+    else
+        echo "database not found"
+    fi
+    main_menu
+}
+
+use_database() {
+    read -p "enter database name: " dbname
+    if [ -d "$DB_PATH/$dbname" ]; then
+        db_menu "$dbname"
+    else
+        echo "database not found"
+        main_menu
+    fi
+}
+
+db_menu() {
+    local dbname=$1
+    echo "--------------- Database: $dbname -------------------"
+    echo "1. create table"
+    echo "2. list tables"
+    echo "3. insert into iable"
+    echo "4. display table"
+    echo "5. drop table"
+    echo "6. back to main menu"
+    read -p "choose an option: " choice
+
+    case $choice in
+        1) create_table "$dbname" ;;
+        2) list_tables "$dbname" ;;
+        3) insert_into_table "$dbname" ;;
+        4) display_table "$dbname" ;;
+        5) drop_table "$dbname" ;;
+        6) main_menu ;;
+        *) echo "Invalid option" ; db_menu "$dbname" ;;
+    esac
+}
+
+main_menu
