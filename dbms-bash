@@ -232,5 +232,147 @@ create_table() {
     database_menu "$dbname"
 }
 
+list_tables() {
+    local dbname=$1
+    echo "==============================================="
+    echo "              LIST TABLES                     "
+    echo "==============================================="
+    
+    if [ "$(ls "$DB_PATH/$dbname" 2>/dev/null | grep -E '\.txt$' | grep -v '_schema')" ]; then
+        echo "Tables in database '$dbname':"
+        echo "-----------------------------"
+        ls "$DB_PATH/$dbname"/*.txt 2>/dev/null | grep -v '_schema' | sed 's/.*\///;s/\.txt$//' | nl
+    else
+        echo "No tables found in database '$dbname'."
+    fi
+    echo ""
+    database_menu "$dbname"
+}
+
+drop_table() {
+    local dbname=$1
+    echo "==============================================="
+    echo "               DROP TABLE                     "
+    echo "==============================================="
+    read -p "Enter table name to delete: " tablename
+    
+    if [ -f "$DB_PATH/$dbname/$tablename.txt" ]; then
+        read -p "Are you sure you want to delete table '$tablename'? (yes/no): " confirm
+        if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            rm "$DB_PATH/$dbname/$tablename.txt" 2>/dev/null
+            rm "$DB_PATH/$dbname/${tablename}_schema.txt" 2>/dev/null
+            echo "Table '$tablename' deleted successfully!"
+        else
+            echo "Deletion cancelled."
+        fi
+    else
+        echo "Table '$tablename' not found!"
+    fi
+    database_menu "$dbname"
+}
+
+validate_datatype() {
+    local value=$1
+    local datatype=$2
+    
+    case $datatype in
+        "int")
+            if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+                return 0
+            else
+                return 1
+            fi
+            ;;
+        "string")
+            return 0  # Any value is valid for string
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+insert_into_table() {
+    local dbname=$1
+    echo "==============================================="
+    echo "             INSERT INTO TABLE                "
+    echo "==============================================="
+    read -p "Enter table name: " tablename
+    
+    if [ ! -f "$DB_PATH/$dbname/$tablename.txt" ]; then
+        echo "Table '$tablename' not found!"
+        database_menu "$dbname"
+        return
+    fi
+    
+    # Read schema
+    schema_file="$DB_PATH/$dbname/${tablename}_schema.txt"
+    
+    # Get column info - first column is always primary key
+    declare -a columns
+    declare -a datatypes
+    while IFS=: read -r col_name col_type; do
+        columns+=("$col_name")
+        datatypes+=("$col_type")
+    done < "$schema_file"
+    
+    primary_key="${columns[0]}"  # First column is always primary key
+    
+    echo ""
+    echo "Table: $tablename"
+    echo "Columns and data types:"
+    for ((i=0; i<${#columns[@]}; i++)); do
+        pk_marker=""
+        if [ $i -eq 0 ]; then
+            pk_marker=" (PRIMARY KEY)"
+        fi
+        echo "  ${columns[i]} (${datatypes[i]})$pk_marker"
+    done
+    echo ""
+    
+    # Input values
+    declare -a values
+    for ((i=0; i<${#columns[@]}; i++)); do
+        while true; do
+            read -p "Enter value for ${columns[i]} (${datatypes[i]}): " input_value
+            
+            # Check if primary key (first column) is null or empty
+            if [ $i -eq 0 ]; then
+                if [ -z "$input_value" ]; then
+                    echo "Error: Primary key cannot be null or empty!"
+                    continue
+                fi
+            fi
+            
+            if validate_datatype "$input_value" "${datatypes[i]}"; then
+                # Check primary key uniqueness (first column is always primary key)
+                if [ $i -eq 0 ]; then
+                    if [ "$(awk -F, -v val="$input_value" 'NR>1 && $1==val {print}' "$DB_PATH/$dbname/$tablename.txt")" ]; then
+                        echo "Error: Primary key value '$input_value' already exists!"
+                        continue
+                    fi
+                fi
+                values+=("$input_value")
+                break
+            else
+                echo "Invalid value for datatype ${datatypes[i]}. Please try again."
+            fi
+        done
+    done
+    
+    # Insert the record
+    {
+        printf "%s" "${values[0]}"
+        for ((i=1; i<${#values[@]}; i++)); do
+            printf ",%s" "${values[i]}"
+        done
+        printf "\n"
+    } >> "$DB_PATH/$dbname/$tablename.txt"
+    
+    echo ""
+    echo "Record inserted successfully!"
+    database_menu "$dbname"
+}
+
 # Start the application
 main_menu
