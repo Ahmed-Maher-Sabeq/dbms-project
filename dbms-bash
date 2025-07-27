@@ -374,5 +374,279 @@ insert_into_table() {
     database_menu "$dbname"
 }
 
+select_from_table() {
+    local dbname=$1
+    echo "==============================================="
+    echo "             SELECT FROM TABLE                "
+    echo "==============================================="
+    read -p "Enter table name: " tablename
+    
+    if [ ! -f "$DB_PATH/$dbname/$tablename.txt" ]; then
+        echo "Table '$tablename' not found!"
+        database_menu "$dbname"
+        return
+    fi
+    
+    # Read table headers
+    headers=$(head -n 1 "$DB_PATH/$dbname/$tablename.txt")
+    IFS=',' read -ra columns <<< "$headers"
+    
+    echo ""
+    echo "Select options:"
+    echo "1. Show all data"
+    echo "2. Select columns"
+    echo "3. Filter rows (WHERE)"
+    echo "4. Select columns + Filter rows"
+    read -p "Choose (1-4): " choice
+    
+    case $choice in
+        1) show_table "$dbname" "$tablename" ;;
+        2) select_columns "$dbname" "$tablename" ;;
+        3) filter_rows "$dbname" "$tablename" ;;
+        4) select_and_filter "$dbname" "$tablename" ;;
+        *) echo "Invalid choice"; select_from_table "$dbname" ;;
+    esac
+}
+
+# Simple function to display entire table
+show_table() {
+    local dbname=$1
+    local tablename=$2
+    echo ""
+    echo "Table: $tablename"
+    echo "=================="
+    cat "$DB_PATH/$dbname/$tablename.txt" | column -t -s ',' 2>/dev/null || cat "$DB_PATH/$dbname/$tablename.txt"
+    echo ""
+    database_menu "$dbname"
+}
+
+# Simple column selection
+select_columns() {
+    local dbname=$1
+    local tablename=$2
+    local file="$DB_PATH/$dbname/$tablename.txt"
+    
+    # Show available columns
+    echo ""
+    echo "Available columns:"
+    head -n 1 "$file" | tr ',' '\n' | nl
+    
+    echo ""
+    read -p "Enter column numbers (Columns must be comma seperated.  e.g. 1,3,5): " selection
+    
+    # Get total number of columns
+    total_cols=$(head -n 1 "$file" | tr ',' '\n' | wc -l)
+    
+    # Validate column selection
+    IFS=',' read -ra cols <<< "$(echo "$selection" | tr -d ' ')"
+    for col in "${cols[@]}"; do
+        if ! [[ "$col" =~ ^[0-9]+$ ]] || [ "$col" -lt 1 ] || [ "$col" -gt "$total_cols" ]; then
+            echo "Error: Invalid column number '$col'! Must be between 1 and $total_cols"
+            database_menu "$dbname"
+            return
+        fi
+    done
+    
+    # Convert selection to cut format
+    cut_fields=$(echo "$selection" | tr -d ' ')
+    
+    echo ""
+    echo "Selected columns:"
+    echo "=================="
+    cut -d',' -f"$cut_fields" "$file" | column -t -s ',' 2>/dev/null || cut -d',' -f"$cut_fields" "$file"
+    echo ""
+    database_menu "$dbname"
+}
+
+# Simple row filtering 
+filter_rows() {
+    local dbname=$1
+    local tablename=$2
+    local file="$DB_PATH/$dbname/$tablename.txt"
+    
+    # Show available columns with numbers
+    echo ""
+    echo "Available columns:"
+    head -n 1 "$file" | tr ',' '\n' | nl
+    
+    echo ""
+    read -p "Enter column number to filter by: " col_num
+    read -p "Enter value to match: " value
+    
+    # Validate column number
+    total_cols=$(head -n 1 "$file" | tr ',' '\n' | wc -l)
+    if ! [[ "$col_num" =~ ^[0-9]+$ ]] || [ "$col_num" -lt 1 ] || [ "$col_num" -gt "$total_cols" ]; then
+        echo "Invalid column number! Must be between 1 and $total_cols"
+        database_menu "$dbname"
+        return
+    fi
+    
+    echo ""
+    echo "Filtering column $col_num for value: '$value'"
+    echo "Filtered results:"
+    echo "=================="
+    
+    # Show header first
+    head -n 1 "$file" | column -t -s ',' 2>/dev/null || head -n 1 "$file"
+    
+    
+    
+    # Core filtering logic
+    {
+        # Skip header, cut the specific column, find matches, then get original lines
+        tail -n +2 "$file" | while IFS= read -r line; do
+            field_value=$(echo "$line" | cut -d',' -f"$col_num")
+            if [ "$field_value" = "$value" ]; then
+                echo "$line"
+            fi
+        done
+    } | column -t -s ',' 2>/dev/null || {
+        tail -n +2 "$file" | while IFS= read -r line; do
+            field_value=$(echo "$line" | cut -d',' -f"$col_num")
+            if [ "$field_value" = "$value" ]; then
+                echo "$line"
+            fi
+        done
+    }
+    
+    echo ""
+    database_menu "$dbname"
+}
+
+# Combined column selection and row filtering 
+select_and_filter() {
+    local dbname=$1
+    local tablename=$2
+    local file="$DB_PATH/$dbname/$tablename.txt"
+    
+    # Show available columns
+    echo ""
+    echo "Available columns:"
+    head -n 1 "$file" | tr ',' '\n' | nl
+    
+    # Get column selection
+    echo ""
+    read -p "Enter column numbers to show (Columns must be comma seperated.  e.g. 1,3,5): " col_selection
+    
+    # Get filter criteria
+    echo ""
+    read -p "Enter column number to filter by: " filter_col
+    read -p "Enter value to match: " filter_value
+    
+    # Get total number of columns
+    total_cols=$(head -n 1 "$file" | tr ',' '\n' | wc -l)
+    
+    # Validate column selection
+    IFS=',' read -ra cols <<< "$(echo "$col_selection" | tr -d ' ')"
+    for col in "${cols[@]}"; do
+        if ! [[ "$col" =~ ^[0-9]+$ ]] || [ "$col" -lt 1 ] || [ "$col" -gt "$total_cols" ]; then
+            echo "Error: Invalid column number '$col' in selection! Must be between 1 and $total_cols"
+            database_menu "$dbname"
+            return
+        fi
+    done
+    
+    # Validate filter column
+    if ! [[ "$filter_col" =~ ^[0-9]+$ ]] || [ "$filter_col" -lt 1 ] || [ "$filter_col" -gt "$total_cols" ]; then
+        echo "Invalid filter column number! Must be between 1 and $total_cols"
+        database_menu "$dbname"
+        return
+    fi
+    
+    # Convert column selection to cut format
+    cut_fields=$(echo "$col_selection" | tr -d ' ')
+    
+    echo ""
+    echo "Results:"
+    echo "========"
+    
+    # Show selected column headers
+    head -n 1 "$file" | cut -d',' -f"$cut_fields"
+    
+    # Filter rows and show selected columns
+    {
+        tail -n +2 "$file" | while IFS= read -r line; do
+            field_value=$(echo "$line" | cut -d',' -f"$filter_col")
+            if [ "$field_value" = "$filter_value" ]; then
+                echo "$line"
+            fi
+        done
+    } | cut -d',' -f"$cut_fields"
+    
+    echo ""
+    database_menu "$dbname"
+}
+
+delete_from_table() {
+    local dbname=$1
+    echo "==============================================="
+    echo " DELETE FROM TABLE "
+    echo "==============================================="
+    read -p "Enter table name: " tablename
+    
+    if [ ! -f "$DB_PATH/$dbname/$tablename.txt" ]; then
+        echo "Table '$tablename' not found!"
+        database_menu "$dbname"
+        return
+    fi
+    
+    local file="$DB_PATH/$dbname/$tablename.txt"
+    
+    # Show available columns for selection
+    echo ""
+    echo "Available columns:"
+    head -n 1 "$file" | tr ',' '\n' | nl
+    
+    echo ""
+    read -p "Enter column number to filter by: " col_num
+    read -p "Enter value to match for deletion: " delete_value
+    
+    # Get total number of columns
+    total_cols=$(head -n 1 "$file" | tr ',' '\n' | wc -l)
+    
+    # Validate column number
+    if ! [[ "$col_num" =~ ^[0-9]+$ ]] || [ "$col_num" -lt 1 ] || [ "$col_num" -gt "$total_cols" ]; then
+        echo "Invalid column number! Must be between 1 and $total_cols"
+        database_menu "$dbname"
+        return
+    fi
+    
+    # Count rows before deletion
+    total_rows_before=$(wc -l < "$file")
+    data_rows_before=$((total_rows_before - 1))
+    
+    
+    # Complete the pattern to match the exact value in the specified column
+    if [ "$col_num" -eq "$total_cols" ]; then
+        # Last column - match until end of line
+        sed_script="${sed_script%,\[^,\]\*},${delete_value}$/d"
+    else
+        # Not last column - match until next comma
+        sed_script="${sed_script%,\[^,\]\*},${delete_value},/d"
+    fi
+    
+    # Alternative simpler approach using awk (more reliable)
+    awk -v col="$col_num" -v val="$delete_value" '
+    BEGIN { FS=OFS="," }
+    NR==1 { print; next }  # Always keep header
+    $col != val { print }  # Keep rows where column value does not match
+    ' "$file" > "${file}.new" && mv "${file}.new" "$file"
+    
+    # Count rows after deletion
+    total_rows_after=$(wc -l < "$file")
+    data_rows_after=$((total_rows_after - 1))
+    deleted_count=$((data_rows_before - data_rows_after))
+    
+    echo ""
+    if [ "$deleted_count" -eq 0 ]; then
+        echo "No rows found matching the criteria."
+    else
+        echo "Successfully deleted $deleted_count row(s) from table '$tablename'!"
+    fi
+    
+    echo ""
+    database_menu "$dbname"
+}
+
 # Start the application
 main_menu
