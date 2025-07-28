@@ -1,5 +1,9 @@
 #!/bin/bash
 
+
+# A simple DBMS using bash scripting part of the ITI devops training program 2025
+# Made by Ahmed Maher
+
 DB_PATH="./DBMS"
 mkdir -p "$DB_PATH"
 
@@ -617,15 +621,6 @@ delete_from_table() {
     
     
     # Complete the pattern to match the exact value in the specified column
-    if [ "$col_num" -eq "$total_cols" ]; then
-        # Last column - match until end of line
-        sed_script="${sed_script%,\[^,\]\*},${delete_value}$/d"
-    else
-        # Not last column - match until next comma
-        sed_script="${sed_script%,\[^,\]\*},${delete_value},/d"
-    fi
-    
-    # Alternative simpler approach using awk (more reliable)
     awk -v col="$col_num" -v val="$delete_value" '
     BEGIN { FS=OFS="," }
     NR==1 { print; next }  # Always keep header
@@ -645,6 +640,111 @@ delete_from_table() {
     fi
     
     echo ""
+    database_menu "$dbname"
+}
+
+
+update_table() {
+    local dbname=$1
+    echo "==============================================="
+    echo "                 UPDATE TABLE                  "
+    echo "==============================================="
+    read -p "Enter table name: " tablename
+
+    local file="$DB_PATH/$dbname/$tablename.txt"
+    local schema_file="$DB_PATH/$dbname/${tablename}_schema.txt"
+
+    if [ ! -f "$file" ]; then
+        echo "Table '$tablename' not found!"
+        database_menu "$dbname"
+        return
+    fi
+
+    # Read schema to get column names and types for validation
+    declare -a columns=()
+    declare -a datatypes=()
+    while IFS=: read -r col_name col_type; do
+        columns+=("$col_name")
+        datatypes+=("$col_type")
+    done < "$schema_file"
+
+    # Get User Input 
+    echo -e "\nAvailable columns: ${columns[*]}"
+    read -p "Enter column name to SET (update): " set_col_name
+    read -p "Enter the NEW value for '$set_col_name': " new_value
+    echo ""
+    read -p "Enter column name for WHERE condition: " where_col_name
+    read -p "Enter the value to match in '$where_col_name': " where_value
+
+    # Validate All Inputs Before Proceeding 
+    local set_col_idx=-1 where_col_idx=-1
+    for i in "${!columns[@]}"; do
+        [[ "${columns[$i]}" == "$set_col_name" ]] && set_col_idx=$i
+        [[ "${columns[$i]}" == "$where_col_name" ]] && where_col_idx=$i
+    done
+
+    if [ $set_col_idx -eq -1 ] || [ $where_col_idx -eq -1 ]; then
+        [ $set_col_idx -eq -1 ] && echo "Error: SET column '$set_col_name' not found."
+        [ $where_col_idx -eq -1 ] && echo "Error: WHERE column '$where_col_name' not found."
+        database_menu "$dbname"
+        return
+    fi
+
+    if ! validate_datatype "$new_value" "${datatypes[set_col_idx]}"; then
+        echo "Error: Invalid data type for '$new_value'. Expected ${datatypes[set_col_idx]}."
+        database_menu "$dbname"
+        return
+    fi
+
+    # If updating the primary key (column 0), check for uniqueness
+    if [ $set_col_idx -eq 0 ]; then
+        # Check if the new PK value exists in a row that is notS being updated
+        local pk_conflict
+        pk_conflict=$(awk -F, \
+            -v new_pk="$new_value" \
+            -v where_col="$((where_col_idx + 1))" \
+            -v where_val="$where_value" \
+            'NR > 1 && $1 == new_pk && $where_col != where_val { print 1; exit }' "$file")
+        
+        if [[ "$pk_conflict" == "1" ]]; then
+            echo "Error: Primary key value '$new_value' already exists in another row."
+            database_menu "$dbname"
+            return
+        fi
+    fi
+
+    # Count affected rows 
+    local updated_count
+    updated_count=$(awk -F, -v col="$((where_col_idx + 1))" -v val="$where_value" '
+        NR > 1 && $col == val { count++ }
+        END { print count+0 }
+    ' "$file")
+
+    if [ "$updated_count" -eq 0 ]; then
+        echo -e "\nNo rows were updated. The condition did not match any rows."
+        database_menu "$dbname"
+        return
+    fi
+    
+    # If rows will be affected, perform the update 
+    local temp_file="${file}.tmp"
+    awk -v set_col="$((set_col_idx + 1))" \
+        -v new_val="$new_value" \
+        -v where_col="$((where_col_idx + 1))" \
+        -v where_val="$where_value" '
+    BEGIN { FS=OFS="," }
+    {
+        # If it is a data row (not header) and matches the WHERE condition, update it
+        if (NR > 1 && $where_col == where_val) {
+            $set_col = new_val;
+        }
+        print # Print every line, whether updated or not
+    }' "$file" > "$temp_file"
+
+    # Replace the original file with the updated temporary file
+    mv "$temp_file" "$file"
+    echo -e "\nSuccessfully updated $updated_count row(s) in '$tablename'."
+
     database_menu "$dbname"
 }
 
