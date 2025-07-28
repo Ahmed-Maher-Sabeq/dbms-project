@@ -4,6 +4,9 @@
 # A simple DBMS using bash scripting part of the ITI devops training program 2025
 # Made by Ahmed Maher
 
+
+# To run the script first give the "dbms-bash" file execute permissions then run the file
+
 DB_PATH="./DBMS"
 mkdir -p "$DB_PATH"
 
