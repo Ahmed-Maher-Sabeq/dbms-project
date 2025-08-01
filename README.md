@@ -67,7 +67,7 @@ DBMS/
   - Primary key must be unique
   - Data types must match declared types
   - Names must follow required naming rules
-- Column indexes are **1-based**, not 0-based
+
 
 ---
 
