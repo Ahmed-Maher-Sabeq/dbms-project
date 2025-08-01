@@ -121,8 +121,3 @@ chmod +x dbms.sh
 ITI DevOps Track – 2025
 
 ---
-
-## License
-
-This project is provided for educational and training purposes.  
-You are free to use, modify, and distribute it for learning use.
